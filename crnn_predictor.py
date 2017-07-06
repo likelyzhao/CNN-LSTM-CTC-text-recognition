@@ -91,6 +91,7 @@ if __name__ == '__main__':
     args = parse_args()
     json_path = os.path.join(os.getcwd(), 'model', 'crnn_ctc-symbol.json')
     param_path = os.path.join(os.getcwd(), 'model', 'crnn_ctc-0100.params')
+    mx.nd.load(param_path)
     num_label = 9 # Set your max length of label, add one more for blank
     batch_size = 1
     num_hidden = 256

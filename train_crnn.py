@@ -61,6 +61,12 @@ class OCRIter(mx.io.DataIter):
             for i in range(self.batch_size):
                 img_name = self.image_set_index[i + k*self.batch_size]
                 img = cv2.imread(os.path.join(self.data_path, img_name + '.jpg'), cv2.IMREAD_GRAYSCALE)
+                if img == None:
+                    print("img null")#
+                    print(img_name)
+                    i -=1 
+                    continue
+                #print(img)
                 #img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
                 img = cv2.resize(img, self.data_shape)
                 img = img.reshape((1, data_shape[1], data_shape[0]))
@@ -78,6 +84,8 @@ class OCRIter(mx.io.DataIter):
                 #print(ret)
                 label.append(ret)
 
+  #          print("datashape")
+  #          print(data[0].shape)
             data_all = [mx.nd.array(data)] + self.init_state_arrays
             label_all = [mx.nd.array(label)]
             data_names = ['data'] + init_state_names
@@ -131,11 +139,23 @@ def remove_blank(l):
         ret.append(l[i])
     return ret
 
+def CTCLoss(label, pred):
+    global BATCH_SIZE
+    global SEQ_LENGTH
+    hit = 0.
+    total = 0.
+#    print(pred)
+    for ctcloss in pred:
+        hit += ctcloss
+    return hit / len(pred)
+
+
 def Accuracy(label, pred):
     global BATCH_SIZE
     global SEQ_LENGTH
     hit = 0.
     total = 0.
+    print(pred)
     for i in range(BATCH_SIZE):
         l = remove_blank(label[i])
         p = []
@@ -178,6 +198,7 @@ if __name__ == '__main__':
         "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
     num_classes = len(classes) + 1
 
+#    contexts = [mx.context.cpu(0)]
     contexts = [mx.context.gpu(0)]
 
     def sym_gen(seq_len):
@@ -193,7 +214,12 @@ if __name__ == '__main__':
     data_val = OCRIter(BATCH_SIZE, classes, data_shape, num_label, init_states, train_flag=False)
 
     symbol = sym_gen(SEQ_LENGTH)
-
+#    arg_shape, output_shape, aux_shape = symbol.infer_shape(label=(32,9))
+#    arg_shape, output_shape, aux_shape = symbol.infer_shape(data=(32,1,32,100),l0_init_h=(32,256),l1_init_h=(32,256),l2_init_h=(32,256),l3_init_h=(32,256))
+    arg_shape, output_shape, aux_shape = symbol.infer_shape(data=(32,1,32,100),l0_init_h=(32,256),l1_init_h=(32,256),l2_init_h=(32,256),l3_init_h=(32,256),label=(32,9))
+    print(output_shape)
+    print("outshape")
+    
     model = mx.model.FeedForward(ctx=contexts,
                                  symbol=symbol,
                                  num_epoch=num_epoch,
@@ -210,7 +236,8 @@ if __name__ == '__main__':
     logger.info('begin fit')
 
     model.fit(X=data_train, eval_data=data_val,
-              eval_metric = mx.metric.np(Accuracy),
+   #           eval_metric = mx.metric.np(Accuracy),
+              eval_metric = CTCLoss,
               batch_end_callback=mx.callback.Speedometer(BATCH_SIZE, 50), logger = logger,
               epoch_end_callback = mx.callback.do_checkpoint(prefix, 1))
 

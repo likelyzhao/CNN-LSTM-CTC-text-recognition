@@ -5,7 +5,9 @@ from collections import namedtuple
 import time
 import math
 LSTMState = namedtuple("LSTMState", ["c", "h"])
-LSTMParam = namedtuple("LSTMParam", ["i2h_weight", "i2h_bias",
+LSTMParamFor = namedtuple("LSTMParamFor", ["i2h_weight", "i2h_bias",
+                                     "h2h_weight", "h2h_bias"])
+LSTMParamBack = namedtuple("LSTMParamBack", ["i2h_weight", "i2h_bias",
                                      "h2h_weight", "h2h_bias"])
 LSTMModel = namedtuple("LSTMModel", ["rnn_exec", "symbol",
                                      "init_states", "last_states", "forward_state", "backward_state",
@@ -46,12 +48,12 @@ def crnn(num_lstm_layer, seq_len, num_hidden, num_classes, num_label, dropout=0.
     for i in range(num_lstm_layer*2):
       last_states.append(LSTMState(c = mx.sym.Variable("l%d_init_c" % i), h = mx.sym.Variable("l%d_init_h" % i)))
       if i % 2 == 0:
-        forward_param.append(LSTMParam(i2h_weight=mx.sym.Variable("l%d_i2h_weight" % i),
+        forward_param.append(LSTMParamiFor(i2h_weight=mx.sym.Variable("l%d_i2h_weight" % i),
                                   i2h_bias=mx.sym.Variable("l%d_i2h_bias" % i),
                                   h2h_weight=mx.sym.Variable("l%d_h2h_weight" % i),
                                   h2h_bias=mx.sym.Variable("l%d_h2h_bias" % i)))
       else:
-        backward_param.append(LSTMParam(i2h_weight=mx.sym.Variable("l%d_i2h_weight" % i),
+        backward_param.append(LSTMParamBack(i2h_weight=mx.sym.Variable("l%d_i2h_weight" % i),
                                   i2h_bias=mx.sym.Variable("l%d_i2h_bias" % i),
                                   h2h_weight=mx.sym.Variable("l%d_h2h_weight" % i),
                                   h2h_bias=mx.sym.Variable("l%d_h2h_bias" % i)))
@@ -127,9 +129,13 @@ def crnn(num_lstm_layer, seq_len, num_hidden, num_classes, num_label, dropout=0.
     # arg_shape, output_shape, aux_shape = cnn_out.infer_shape(data=(32,1,32,100))
     # print(output_shape)
     flatten_out = mx.sym.Flatten(data=cnn_out, name="flatten_out")
-    # arg_shape, output_shape, aux_shape = flatten_out.infer_shape(data=(32,1,32,100))
-    # print(output_shape)
-    wordvec = mx.sym.SliceChannel(data=flatten_out, num_outputs=seq_len, squeeze_axis=1)
+#    arg_shape, output_shape, aux_shape = flatten_out.infer_shape(data=(32,1,32,100))
+
+#    print(output_shape)
+#    return flatten_out
+#    wordvec = mx.sym.SliceChannel(data=flatten_out, num_outputs=seq_len, squeeze_axis=1)
+    wordvec = mx.sym.split(data=flatten_out, num_outputs=seq_len, axis=1)
+
     
     forward_hidden = []
     for seqidx in range(seq_len):
@@ -160,13 +166,19 @@ def crnn(num_lstm_layer, seq_len, num_hidden, num_classes, num_label, dropout=0.
     hidden_all = []
     for i in range(seq_len):
         hidden_all.append(mx.sym.Concat(*[forward_hidden[i], backward_hidden[i]], dim=1))
-
     hidden_concat = mx.sym.Concat(*hidden_all, dim=0)
     pred = mx.sym.FullyConnected(data=hidden_concat, num_hidden=num_classes)
+    pred_reshape = mx.sym.reshape(data=pred,shape=(-4,seq_len,-1,0))
+    print(num_label)
+#    return pred_reshape
+#    label = mx.sym.reshape(data=label, shape=(-1,))
+#    label = mx.sym.Cast(data = label, dtype = 'int32')
+#    return label
+#    sm = mx.sym.WarpCTC(data=pred_reshape, label=label, label_length = num_label, input_length = seq_len)
+    sm_ = mx.contrib.sym.ctc_loss(data=pred_reshape, label=label)
+    sm = mx.sym.MakeLoss(name='ctc_loss', data=sm_, grad_scale=1.0)
 
-    label = mx.sym.Reshape(data=label, shape=(-1,))
-    label = mx.sym.Cast(data = label, dtype = 'int32')
-    sm = mx.sym.WarpCTC(data=pred, label=label, label_length = num_label, input_length = seq_len)
-
+#    group = mx.symbol.Group([sm, mx.symbol.BlockGrad(pred_reshape)])
+#    return group
     return sm
 
